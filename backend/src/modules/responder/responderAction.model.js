@@ -15,7 +15,11 @@ const responderActionSchema = new mongoose.Schema(
     action: {
       type: String,
       required: true,
-      enum: ["ACCEPTED", "ENROUTE"],
+      enum: ["ACCEPTED", "ENROUTE", "UNABLE_TO_ASSIST"],
+    },
+    reason: {
+      type: String,
+      required: false,
     },
     timestamp: {
       type: Date,

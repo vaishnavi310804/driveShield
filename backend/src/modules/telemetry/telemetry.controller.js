@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 import Telemetry from "./telemetry.model.js";
 import Vehicle from "../vehicle/vehicle.model.js";
 import Driver from "../driver/driver.model.js";
+import { processAnomalyEvaluation } from "../anomaly/anomaly.controller.js";
+import {
+  findActiveIncident,
+  processIncidentTrigger,
+} from "../incident/incident.controller.js";
 
 const isValidEvent = (event) => {
   if (!event || typeof event !== "object" || Array.isArray(event)) {
@@ -42,6 +47,50 @@ const isValidEvent = (event) => {
   }
 
   return true;
+};
+
+/**
+ * Process single telemetry event through the automatic Anomaly -> Incident pipeline.
+ */
+const processEventPipeline = async (event) => {
+  try {
+    const anomalyResult = await processAnomalyEvaluation(event);
+    const anomalyEvent = anomalyResult?.data || null;
+
+    if (!anomalyEvent || anomalyEvent.escalationFlag !== true) {
+      return {
+        anomaly: anomalyEvent,
+        incident: null,
+      };
+    }
+
+    // Check for an existing active incident for this driver & vehicle
+    const activeIncident = await findActiveIncident(event.driverId, event.vehicleId);
+
+    if (activeIncident) {
+      // Active incident already exists: persist AnomalyEvent, but do NOT create duplicate Incident
+      return {
+        anomaly: anomalyEvent,
+        incident: activeIncident,
+        activeIncidentExists: true,
+      };
+    }
+
+    // No active incident: trigger emergency incident creation
+    const incidentResult = await processIncidentTrigger(anomalyEvent);
+    return {
+      anomaly: anomalyEvent,
+      incident: incidentResult?.data || null,
+      activeIncidentExists: false,
+    };
+  } catch (err) {
+    console.error("Error in automatic telemetry processing pipeline:", err);
+    return {
+      anomaly: null,
+      incident: null,
+      pipelineError: err.message,
+    };
+  }
 };
 
 export const ingestTelemetry = async (req, res, next) => {
@@ -104,17 +153,40 @@ export const ingestTelemetry = async (req, res, next) => {
 
     if (isBatch) {
       const createdEvents = await Telemetry.insertMany(events);
+
+      // Process pipeline for each event in the batch
+      const processingResults = await Promise.all(
+        events.map((e) => processEventPipeline(e))
+      );
+
       return res.status(201).json({
         success: true,
         message: "Telemetry batch ingested successfully",
         data: createdEvents,
+        processingResults,
       });
     } else {
       const createdEvent = await Telemetry.create(payload);
-      return res.status(201).json({
+
+      // Process pipeline for single telemetry event
+      const pipelineResult = await processEventPipeline(payload);
+
+      const responsePayload = {
         success: true,
         message: "Telemetry ingested successfully",
         data: createdEvent,
+      };
+
+      if (pipelineResult.anomaly) {
+        responsePayload.anomaly = pipelineResult.anomaly;
+      }
+
+      if (pipelineResult.incident) {
+        responsePayload.incident = pipelineResult.incident;
+      }
+
+      return res.status(201).json({
+        ...responsePayload,
       });
     }
   } catch (error) {
