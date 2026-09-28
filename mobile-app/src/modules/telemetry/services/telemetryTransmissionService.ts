@@ -199,6 +199,7 @@ export class TelemetryTransmissionService {
         return; // Skip tick if telemetry payload is not ready
       }
 
+      await this.sendTelemetry(latestData, driverId, vehicleId);
     }, validInterval);
   }
 

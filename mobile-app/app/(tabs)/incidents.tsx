@@ -334,7 +334,7 @@ export default function IncidentsScreen() {
         {!isLoading && !errorMessage && incidents.length === 0 && (
           <Card style={styles.emptyCard}>
             <Ionicons
-              name="time-outline"
+              name={!user?.driverId ? "id-card-outline" : "time-outline"}
               size={48}
               color={COLORS.textMuted}
               style={{ marginBottom: SPACING.sm }}
@@ -344,9 +344,22 @@ export default function IncidentsScreen() {
             </Text>
             <Text style={styles.emptySubtext}>
               {!user?.driverId
-                ? "Your account is not linked to a driver profile. No incident history available."
+                ? "Your account is not linked to a driver profile. Complete driver profile setup to view incident history."
                 : "No incident records found for this driver profile."}
             </Text>
+
+            {!user?.driverId && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.setupDriverButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={() => router.push("/onboarding/driver" as any)}
+              >
+                <Ionicons name="card-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.setupDriverButtonText}>Setup Driver Profile</Text>
+              </Pressable>
+            )}
           </Card>
         )}
 
@@ -538,6 +551,23 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.body,
     color: COLORS.textMuted,
     fontSize: 13,
+    textAlign: "center",
+  },
+  setupDriverButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primaryDark,
+    borderRadius: 8,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  setupDriverButtonText: {
+    ...TYPOGRAPHY.cardTitle,
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   errorContainer: {
     alignItems: "center",

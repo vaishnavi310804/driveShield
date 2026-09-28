@@ -7,12 +7,10 @@ import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { Card } from "../../src/components/Card";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { SimulationControls } from "../../src/components/dev/SimulationControls";
-import { useUnifiedTelemetry } from "../../src/modules/telemetry/hooks/useUnifiedTelemetry";
-import { useTelemetryTransmission } from "../../src/modules/telemetry/hooks/useTelemetryTransmission";
 import { useAuth } from "../../src/modules/auth/AuthContext";
-import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
-
 import { useVehicle } from "../../src/modules/vehicle/VehicleContext";
+import { useTelemetryContext } from "../../src/modules/telemetry";
+import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 
 const DRIVER_DATA = {
   name: "Alex Morgan",
@@ -33,43 +31,17 @@ export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { vehicle, vehicleId, status: vehicleStatus, errorMessage: vehicleError } = useVehicle();
 
-  // 1. Unified Telemetry Aggregator (5 sources)
+  // Shared Telemetry Context (Single Source of Truth)
   const {
-    data: unifiedData,
     isCollecting,
+    isTransmitting,
+    transmissionStatus,
+    lastSuccessTimestamp,
     vehicleSimulationMode,
     driverStateSimulationMode,
     setVehicleSimulationMode,
     setDriverStateSimulationMode,
-  } = useUnifiedTelemetry({
-    enabled: true,
-    motionUpdateIntervalMs: 200,
-    locationTimeIntervalMs: 1000,
-    vehicleUpdateIntervalMs: 500,
-    driverStateUpdateIntervalMs: 1000,
-    emissionIntervalMs: 200,
-  });
-
-  const unifiedDataRef = useRef(unifiedData);
-  unifiedDataRef.current = unifiedData;
-
-  // 2. Mobile Telemetry Transmission (POST /api/telemetry @ 1 Hz)
-  const {
-    status: transmissionStatus,
-    isTransmitting,
-    lastSuccessTimestamp,
-    start: startTransmission,
-  } = useTelemetryTransmission({
-    transmissionIntervalMs: 1000,
-    driverId: user?.driverId || undefined,
-    vehicleId: vehicleId || undefined,
-  });
-
-  useEffect(() => {
-    if (user?.driverId && vehicleId) {
-      startTransmission(() => unifiedDataRef.current);
-    }
-  }, [user?.driverId, vehicleId]);
+  } = useTelemetryContext();
 
   const displayName = user?.fullName || DRIVER_DATA.name;
   const displayEmail = user?.email || DRIVER_DATA.phone;
@@ -215,7 +187,7 @@ export default function ProfileScreen() {
           ]}
           onPress={logout}
           accessibilityRole="button"
-          accessibilityLabel="Sign Out"
+          accessibilityLabel="Logout"
         >
           <Ionicons
             name="log-out-outline"
@@ -223,7 +195,7 @@ export default function ProfileScreen() {
             color={COLORS.danger}
             style={{ marginRight: SPACING.xs }}
           />
-          <Text style={styles.logoutButtonText}>Sign Out</Text>
+          <Text style={styles.logoutButtonText}>Logout</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

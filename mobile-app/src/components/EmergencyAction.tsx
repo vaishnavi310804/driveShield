@@ -6,11 +6,13 @@ import { COLORS, SPACING, TYPOGRAPHY } from "../theme/theme";
 import { API_BASE_URL } from "../config/api.config";
 import { useAuth } from "../modules/auth/AuthContext";
 import { useVehicle } from "../modules/vehicle/VehicleContext";
+import { useTelemetryContext } from "../modules/telemetry";
 import { authenticatedFetch } from "../modules/auth/apiClient";
 
 export const EmergencyAction: React.FC = () => {
   const { user } = useAuth();
   const { vehicleId } = useVehicle();
+  const { baselineStatus, refreshBaselineStatus } = useTelemetryContext();
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -24,6 +26,15 @@ export const EmergencyAction: React.FC = () => {
 
     if (!vehicleId) {
       setErrorMessage("No active vehicle is registered. Emergency actions require an active vehicle.");
+      return;
+    }
+
+    if (baselineStatus === "ESTABLISHING") {
+      await refreshBaselineStatus();
+    }
+
+    if (baselineStatus === "ESTABLISHING") {
+      setErrorMessage("Safety baseline is still being established. Please wait for normal telemetry to be collected.");
       return;
     }
 
@@ -66,7 +77,13 @@ export const EmergencyAction: React.FC = () => {
 
       if (!anomalyRes.ok || !anomalyData?.success || !anomalyData?.data?._id) {
         setIsTriggering(false);
-        setErrorMessage(anomalyData?.message || "Failed to log emergency anomaly.");
+        const rawMessage = anomalyData?.message || "";
+        const formattedMsg =
+          rawMessage.toLowerCase().includes("baseline required") ||
+          rawMessage.toLowerCase().includes("no baseline")
+            ? "Safety baseline is still being established. Please wait for normal telemetry to be collected."
+            : rawMessage || "Failed to log emergency anomaly.";
+        setErrorMessage(formattedMsg);
         return;
       }
 

@@ -21,3 +21,4 @@ export * from './hooks/useDeviceContext';
 export * from './hooks/useVehicleTelemetrySimulator';
 export * from './hooks/useDriverStateSimulator';
 export * from './hooks/useTelemetryTransmission';
+export * from './TelemetryContext';

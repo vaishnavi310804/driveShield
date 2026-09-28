@@ -14,6 +14,178 @@ const classifyMotion = (reading) => {
   };
 };
 
+const isNormalFocusedTelemetry = (r) => {
+  if (r.driverState?.attentionState) {
+    const attention = String(r.driverState.attentionState).toUpperCase();
+    if (attention !== "FOCUSED") {
+      return false;
+    }
+  }
+
+  if (r.driverState?.perclos !== undefined && r.driverState.perclos > 10.0) {
+    return false;
+  }
+
+  if (r.vehicleData?.diagnosticFaults && r.vehicleData.diagnosticFaults.length > 0) {
+    return false;
+  }
+
+  if (r.motion?.gForce !== undefined && r.motion.gForce >= 1.5) {
+    return false;
+  }
+
+  const speed =
+    r.vehicleData?.speed !== undefined && r.vehicleData?.speed !== null
+      ? r.vehicleData.speed
+      : r.location?.speed;
+  const rpm = r.vehicleData?.rpm;
+  if (rpm === 0 && speed !== undefined && speed > 0) {
+    return false;
+  }
+
+  return true;
+};
+
+export const calculateBaselineInternal = async (driverId, vehicleId) => {
+  const allRecords = await Telemetry.find({ driverId, vehicleId });
+  const telemetryRecords = allRecords.filter(isNormalFocusedTelemetry);
+
+  if (!telemetryRecords || telemetryRecords.length === 0) {
+    return {
+      success: false,
+      message: "No historical normal/focused telemetry found for this driver and vehicle pair.",
+    };
+  }
+
+  // 1. Calculate avgSpeed (vehicleData.speed takes precedence over location.speed)
+  const speeds = telemetryRecords
+    .map((r) =>
+      r.vehicleData?.speed !== undefined && r.vehicleData?.speed !== null
+        ? r.vehicleData.speed
+        : r.location?.speed
+    )
+    .filter((s) => s !== undefined && s !== null && !isNaN(s));
+
+  const avgSpeed =
+    speeds.length > 0
+      ? speeds.reduce((sum, val) => sum + val, 0) / speeds.length
+      : undefined;
+
+  // 2. Calculate avgRpm
+  const rpms = telemetryRecords
+    .map((r) => r.vehicleData?.rpm)
+    .filter((r) => r !== undefined && r !== null && !isNaN(r));
+
+  const avgRpm =
+    rpms.length > 0
+      ? rpms.reduce((sum, val) => sum + val, 0) / rpms.length
+      : undefined;
+
+  // 3. Calculate maxNormalGForce
+  const gForces = telemetryRecords
+    .map((r) => r.motion?.gForce)
+    .filter((g) => g !== undefined && g !== null && !isNaN(g));
+
+  const maxNormalGForce =
+    gForces.length > 0 ? Math.max(...gForces) : undefined;
+
+  // 4. Calculate normalCoolantTemp
+  const coolantTemps = telemetryRecords
+    .map((r) => r.vehicleData?.coolantTemp)
+    .filter((c) => c !== undefined && c !== null && !isNaN(c));
+
+  const normalCoolantTemp =
+    coolantTemps.length > 0
+      ? coolantTemps.reduce((sum, val) => sum + val, 0) / coolantTemps.length
+      : undefined;
+
+  // 5. Calculate normalBatteryVoltage
+  const batteryVoltages = telemetryRecords
+    .map((r) => r.vehicleData?.batteryVoltage)
+    .filter((v) => v !== undefined && v !== null && !isNaN(v));
+
+  const normalBatteryVoltage =
+    batteryVoltages.length > 0
+      ? batteryVoltages.reduce((sum, val) => sum + val, 0) /
+        batteryVoltages.length
+      : undefined;
+
+  // 6. Calculate normalPerclos
+  const perclosValues = telemetryRecords
+    .map((r) => r.driverState?.perclos)
+    .filter((p) => p !== undefined && p !== null && !isNaN(p));
+
+  const normalPerclos =
+    perclosValues.length > 0
+      ? perclosValues.reduce((sum, val) => sum + val, 0) / perclosValues.length
+      : undefined;
+
+  // 7. Braking and Acceleration G-force (classification isolated via helper)
+  let avgBrakingGForce;
+  let avgAccelerationGForce;
+
+  const brakingGForces = [];
+  const accelGForces = [];
+
+  for (const record of telemetryRecords) {
+    const { isBraking, isAcceleration } = classifyMotion(record);
+    if (isBraking && record.motion?.gForce !== undefined) {
+      brakingGForces.push(record.motion.gForce);
+    }
+    if (isAcceleration && record.motion?.gForce !== undefined) {
+      accelGForces.push(record.motion.gForce);
+    }
+  }
+
+  if (brakingGForces.length > 0) {
+    avgBrakingGForce =
+      brakingGForces.reduce((sum, v) => sum + v, 0) / brakingGForces.length;
+  }
+
+  if (accelGForces.length > 0) {
+    avgAccelerationGForce =
+      accelGForces.reduce((sum, v) => sum + v, 0) / accelGForces.length;
+  }
+
+  const driverBaseline = {
+    avgSpeed,
+    avgBrakingGForce,
+    avgAccelerationGForce,
+    normalPerclos,
+  };
+
+  const vehicleBaseline = {
+    avgRpm,
+    maxNormalGForce,
+    normalCoolantTemp,
+    normalBatteryVoltage,
+  };
+
+  const lastUpdated = new Date();
+
+  let baseline = await Baseline.findOne({ driverId, vehicleId });
+
+  if (baseline) {
+    baseline.driverBaseline = driverBaseline;
+    baseline.vehicleBaseline = vehicleBaseline;
+    baseline.lastUpdated = lastUpdated;
+    await baseline.save();
+  } else {
+    baseline = await Baseline.create({
+      driverId,
+      vehicleId,
+      driverBaseline,
+      vehicleBaseline,
+      lastUpdated,
+    });
+  }
+
+  return {
+    success: true,
+    data: baseline,
+  };
+};
+
 export const calculateBaseline = async (req, res, next) => {
   try {
     const { driverId, vehicleId } = req.body || {};
@@ -77,142 +249,65 @@ export const calculateBaseline = async (req, res, next) => {
       }
     }
 
+    const result = await calculateBaselineInternal(driverId, vehicleId);
 
-    const telemetryRecords = await Telemetry.find({ driverId, vehicleId });
-
-    if (!telemetryRecords || telemetryRecords.length === 0) {
+    if (!result.success) {
       return res.status(400).json({
         success: false,
-        message: "No historical telemetry found for this driver and vehicle pair.",
-      });
-    }
-
-    // 1. Calculate avgSpeed (vehicleData.speed takes precedence over location.speed)
-    const speeds = telemetryRecords
-      .map((r) =>
-        r.vehicleData?.speed !== undefined && r.vehicleData?.speed !== null
-          ? r.vehicleData.speed
-          : r.location?.speed
-      )
-      .filter((s) => s !== undefined && s !== null && !isNaN(s));
-
-    const avgSpeed =
-      speeds.length > 0
-        ? speeds.reduce((sum, val) => sum + val, 0) / speeds.length
-        : undefined;
-
-    // 2. Calculate avgRpm
-    const rpms = telemetryRecords
-      .map((r) => r.vehicleData?.rpm)
-      .filter((r) => r !== undefined && r !== null && !isNaN(r));
-
-    const avgRpm =
-      rpms.length > 0
-        ? rpms.reduce((sum, val) => sum + val, 0) / rpms.length
-        : undefined;
-
-    // 3. Calculate maxNormalGForce
-    const gForces = telemetryRecords
-      .map((r) => r.motion?.gForce)
-      .filter((g) => g !== undefined && g !== null && !isNaN(g));
-
-    const maxNormalGForce =
-      gForces.length > 0 ? Math.max(...gForces) : undefined;
-
-    // 4. Calculate normalCoolantTemp
-    const coolantTemps = telemetryRecords
-      .map((r) => r.vehicleData?.coolantTemp)
-      .filter((c) => c !== undefined && c !== null && !isNaN(c));
-
-    const normalCoolantTemp =
-      coolantTemps.length > 0
-        ? coolantTemps.reduce((sum, val) => sum + val, 0) / coolantTemps.length
-        : undefined;
-
-    // 5. Calculate normalBatteryVoltage
-    const batteryVoltages = telemetryRecords
-      .map((r) => r.vehicleData?.batteryVoltage)
-      .filter((v) => v !== undefined && v !== null && !isNaN(v));
-
-    const normalBatteryVoltage =
-      batteryVoltages.length > 0
-        ? batteryVoltages.reduce((sum, val) => sum + val, 0) /
-          batteryVoltages.length
-        : undefined;
-
-    // 6. Calculate normalPerclos
-    const perclosValues = telemetryRecords
-      .map((r) => r.driverState?.perclos)
-      .filter((p) => p !== undefined && p !== null && !isNaN(p));
-
-    const normalPerclos =
-      perclosValues.length > 0
-        ? perclosValues.reduce((sum, val) => sum + val, 0) / perclosValues.length
-        : undefined;
-
-    // 7. Braking and Acceleration G-force (classification isolated via helper)
-    let avgBrakingGForce;
-    let avgAccelerationGForce;
-
-    const brakingGForces = [];
-    const accelGForces = [];
-
-    for (const record of telemetryRecords) {
-      const { isBraking, isAcceleration } = classifyMotion(record);
-      if (isBraking && record.motion?.gForce !== undefined) {
-        brakingGForces.push(record.motion.gForce);
-      }
-      if (isAcceleration && record.motion?.gForce !== undefined) {
-        accelGForces.push(record.motion.gForce);
-      }
-    }
-
-    if (brakingGForces.length > 0) {
-      avgBrakingGForce =
-        brakingGForces.reduce((sum, v) => sum + v, 0) / brakingGForces.length;
-    }
-
-    if (accelGForces.length > 0) {
-      avgAccelerationGForce =
-        accelGForces.reduce((sum, v) => sum + v, 0) / accelGForces.length;
-    }
-
-    const driverBaseline = {
-      avgSpeed,
-      avgBrakingGForce,
-      avgAccelerationGForce,
-      normalPerclos,
-    };
-
-    const vehicleBaseline = {
-      avgRpm,
-      maxNormalGForce,
-      normalCoolantTemp,
-      normalBatteryVoltage,
-    };
-
-    const lastUpdated = new Date();
-
-    let baseline = await Baseline.findOne({ driverId, vehicleId });
-
-    if (baseline) {
-      baseline.driverBaseline = driverBaseline;
-      baseline.vehicleBaseline = vehicleBaseline;
-      baseline.lastUpdated = lastUpdated;
-      await baseline.save();
-    } else {
-      baseline = await Baseline.create({
-        driverId,
-        vehicleId,
-        driverBaseline,
-        vehicleBaseline,
-        lastUpdated,
+        message: result.message,
       });
     }
 
     return res.status(200).json({
       success: true,
       message: "Baseline calculated and updated successfully",
+      data: result.data,
+    });
+  } catch (error) {
+    if (error.name === "ValidationError" || error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    next(error);
+  }
+};
+
+export const getBaseline = async (req, res, next) => {
+  try {
+    const { driverId, vehicleId } = req.query || {};
+
+    if (!driverId || !vehicleId) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide both driverId and vehicleId query parameters.",
+      });
+    }
+
+    if (
+      !mongoose.Types.ObjectId.isValid(driverId) ||
+      !mongoose.Types.ObjectId.isValid(vehicleId)
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "Referenced driver or vehicle profile not found.",
+      });
+    }
+
+    const baseline = await Baseline.findOne({ driverId, vehicleId });
+
+    if (!baseline) {
+      return res.status(404).json({
+        success: false,
+        message: "No baseline found for this driver and vehicle pair.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Baseline fetched successfully",
       data: baseline,
     });
   } catch (error) {

@@ -14,77 +14,69 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAuth } from "../../src/modules/auth/AuthContext";
+import { createDriverApi } from "../../src/modules/driver/driver.service";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 
-export default function RegisterScreen() {
-  const { register } = useAuth();
+export default function DriverOnboardingScreen() {
+  const { restoreSession } = useAuth();
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
+  const [phone, setPhone] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactRelation, setContactRelation] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const validateForm = (): boolean => {
-    if (!fullName.trim()) {
-      setErrorMessage("Please enter your full name.");
+    if (!licenseNumber.trim()) {
+      setErrorMessage("Please enter your driver license number.");
       return false;
     }
 
-    if (!email.trim()) {
-      setErrorMessage("Please enter your email address.");
+    if (!phone.trim()) {
+      setErrorMessage("Please enter your phone number.");
       return false;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      setErrorMessage("Please enter a valid email address.");
+    if (!contactName.trim()) {
+      setErrorMessage("Please enter an emergency contact name.");
       return false;
     }
 
-    if (!password) {
-      setErrorMessage("Please enter a password.");
-      return false;
-    }
-
-    if (password.length < 6) {
-      setErrorMessage("Password must be at least 6 characters long.");
-      return false;
-    }
-
-    if (!confirmPassword) {
-      setErrorMessage("Please confirm your password.");
-      return false;
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMessage("Passwords do not match. Please try again.");
+    if (!contactPhone.trim()) {
+      setErrorMessage("Please enter an emergency contact phone number.");
       return false;
     }
 
     return true;
   };
 
-  const handleRegister = async () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
 
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const result = await register(fullName, email, password);
-    setIsSubmitting(false);
+    const result = await createDriverApi({
+      licenseNumber: licenseNumber.trim(),
+      phone: phone.trim(),
+      emergencyContact: {
+        name: contactName.trim(),
+        phone: contactPhone.trim(),
+        relationship: contactRelation.trim() || undefined,
+      },
+    });
 
     if (result.success) {
-      router.replace("/onboarding/driver" as any);
+      // Refresh authenticated session so user.driverId is updated
+      await restoreSession();
+      setIsSubmitting(false);
+      router.replace("/onboarding/vehicle" as any);
     } else {
-      const msg = result.message;
-      if (msg.includes("already registered") || msg.includes("already exists")) {
-        setErrorMessage("An account with this email already exists.");
-      } else {
-        setErrorMessage(msg || "Registration failed. Please try again.");
-      }
+      setIsSubmitting(false);
+      setErrorMessage(result.message || "Failed to create driver profile. Please try again.");
     }
   };
 
@@ -102,10 +94,10 @@ export default function RegisterScreen() {
           {/* Header Icon & Title */}
           <View style={styles.headerContainer}>
             <View style={styles.iconCircle}>
-              <Ionicons name="person-add-outline" size={44} color={COLORS.primary} />
+              <Ionicons name="card-outline" size={40} color={COLORS.primary} />
             </View>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Sign up to start monitoring your safety</Text>
+            <Text style={styles.title}>Driver Profile Setup</Text>
+            <Text style={styles.subtitle}>Complete your driver details to enable safety monitoring</Text>
           </View>
 
           {/* Error Banner */}
@@ -121,11 +113,68 @@ export default function RegisterScreen() {
             </View>
           )}
 
-          {/* Input Form */}
+          {/* Form */}
           <View style={styles.formContainer}>
-            {/* Full Name */}
+            {/* License Number */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Full Name</Text>
+              <Text style={styles.inputLabel}>License Number</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons
+                  name="id-card-outline"
+                  size={20}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. DL-987654321"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={licenseNumber}
+                  onChangeText={(text) => {
+                    setLicenseNumber(text);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  editable={!isSubmitting}
+                />
+              </View>
+            </View>
+
+            {/* Phone Number */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Phone Number</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons
+                  name="call-outline"
+                  size={20}
+                  color={COLORS.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. +1 555 010 1234"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={phone}
+                  onChangeText={(text) => {
+                    setPhone(text);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  keyboardType="phone-pad"
+                  editable={!isSubmitting}
+                />
+              </View>
+            </View>
+
+            {/* Emergency Contact Header */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Emergency Contact</Text>
+              <Text style={styles.sectionSubtitle}>Primary contact in case of safety events</Text>
+            </View>
+
+            {/* Emergency Contact Name */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Contact Name</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons
                   name="person-outline"
@@ -135,94 +184,64 @@ export default function RegisterScreen() {
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="Alex Morgan"
+                  placeholder="e.g. Jordan Morgan"
                   placeholderTextColor={COLORS.textMuted}
-                  value={fullName}
+                  value={contactName}
                   onChangeText={(text) => {
-                    setFullName(text);
+                    setContactName(text);
                     if (errorMessage) setErrorMessage(null);
                   }}
                   autoCapitalize="words"
-                  autoCorrect={false}
                   editable={!isSubmitting}
                 />
               </View>
             </View>
 
-            {/* Email Address */}
+            {/* Emergency Contact Phone */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email Address</Text>
+              <Text style={styles.inputLabel}>Contact Phone</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons
-                  name="mail-outline"
+                  name="call-outline"
                   size={20}
                   color={COLORS.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="alex@example.com"
+                  placeholder="e.g. +1 555 010 5678"
                   placeholderTextColor={COLORS.textMuted}
-                  value={email}
+                  value={contactPhone}
                   onChangeText={(text) => {
-                    setEmail(text);
+                    setContactPhone(text);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
+                  keyboardType="phone-pad"
                   editable={!isSubmitting}
                 />
               </View>
             </View>
 
-            {/* Password */}
+            {/* Emergency Contact Relationship (Optional) */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
+              <Text style={styles.inputLabel}>Relationship (Optional)</Text>
               <View style={styles.inputWrapper}>
                 <Ionicons
-                  name="lock-closed-outline"
+                  name="people-outline"
                   size={20}
                   color={COLORS.textMuted}
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="At least 6 characters"
+                  placeholder="e.g. Spouse / Parent / Sibling"
                   placeholderTextColor={COLORS.textMuted}
-                  value={password}
+                  value={contactRelation}
                   onChangeText={(text) => {
-                    setPassword(text);
+                    setContactRelation(text);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  editable={!isSubmitting}
-                />
-              </View>
-            </View>
-
-            {/* Confirm Password */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Confirm Password</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={20}
-                  color={COLORS.textMuted}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Re-enter password"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={confirmPassword}
-                  onChangeText={(text) => {
-                    setConfirmPassword(text);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  secureTextEntry
-                  autoCapitalize="none"
+                  autoCapitalize="words"
                   editable={!isSubmitting}
                 />
               </View>
@@ -235,33 +254,16 @@ export default function RegisterScreen() {
                 isSubmitting && styles.buttonDisabled,
                 pressed && !isSubmitting && styles.buttonPressed,
               ]}
-              onPress={handleRegister}
+              onPress={handleSubmit}
               disabled={isSubmitting}
               accessibilityRole="button"
-              accessibilityLabel="Create Account"
+              accessibilityLabel="Complete Profile Setup"
             >
               {isSubmitting ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={styles.submitButtonText}>Create Account</Text>
+                <Text style={styles.submitButtonText}>Complete Setup</Text>
               )}
-            </Pressable>
-
-            {/* Back to Login Link */}
-            <Pressable
-              style={styles.loginLink}
-              onPress={() => {
-                if (router.canGoBack()) {
-                  router.back();
-                } else {
-                  router.replace("/auth/login" as any);
-                }
-              }}
-              disabled={isSubmitting}
-            >
-              <Text style={styles.loginLinkText}>
-                Already have an account? <Text style={styles.loginLinkBold}>Sign In</Text>
-              </Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -289,9 +291,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
     borderWidth: 1,
@@ -301,14 +303,16 @@ const styles = StyleSheet.create({
   },
   title: {
     ...TYPOGRAPHY.header,
-    fontSize: 26,
+    fontSize: 24,
     color: COLORS.textPrimary,
     marginBottom: SPACING.xs,
+    textAlign: "center",
   },
   subtitle: {
     ...TYPOGRAPHY.body,
     color: COLORS.textSecondary,
-    fontSize: 15,
+    fontSize: 14,
+    textAlign: "center",
   },
   errorBanner: {
     flexDirection: "row",
@@ -331,6 +335,20 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     gap: SPACING.md,
+  },
+  sectionHeader: {
+    marginTop: SPACING.sm,
+    marginBottom: -SPACING.xs,
+  },
+  sectionTitle: {
+    ...TYPOGRAPHY.subHeader,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+  },
+  sectionSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
   inputGroup: {
     gap: SPACING.xs,
@@ -366,7 +384,7 @@ const styles = StyleSheet.create({
     height: 52,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: SPACING.sm,
+    marginTop: SPACING.md,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -379,21 +397,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.cardTitle,
     fontSize: 16,
     color: "#FFFFFF",
-    fontWeight: "700",
-  },
-  loginLink: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: SPACING.xs,
-    marginTop: SPACING.xs,
-  },
-  loginLinkText: {
-    ...TYPOGRAPHY.body,
-    fontSize: 14,
-    color: COLORS.textSecondary,
-  },
-  loginLinkBold: {
-    color: COLORS.primary,
     fontWeight: "700",
   },
 });

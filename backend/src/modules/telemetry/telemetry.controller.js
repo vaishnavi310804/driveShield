@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import Telemetry from "./telemetry.model.js";
 import Vehicle from "../vehicle/vehicle.model.js";
 import Driver from "../driver/driver.model.js";
+import Baseline from "../baseline/baseline.model.js";
+import { calculateBaselineInternal } from "../baseline/baseline.controller.js";
 import { processAnomalyEvaluation } from "../anomaly/anomaly.controller.js";
 import {
   findActiveIncident,
@@ -196,6 +198,16 @@ export const ingestTelemetry = async (req, res, next) => {
     if (isBatch) {
       const createdEvents = await Telemetry.insertMany(events);
 
+      for (const event of events) {
+        const existingBaseline = await Baseline.findOne({
+          driverId: event.driverId,
+          vehicleId: event.vehicleId,
+        });
+        if (!existingBaseline) {
+          await calculateBaselineInternal(event.driverId, event.vehicleId);
+        }
+      }
+
       // Process pipeline for each event in the batch
       const processingResults = await Promise.all(
         events.map((e) => processEventPipeline(e))
@@ -209,6 +221,16 @@ export const ingestTelemetry = async (req, res, next) => {
       });
     } else {
       const createdEvent = await Telemetry.create(payload);
+
+      if (payload.driverId && payload.vehicleId) {
+        const existingBaseline = await Baseline.findOne({
+          driverId: payload.driverId,
+          vehicleId: payload.vehicleId,
+        });
+        if (!existingBaseline) {
+          await calculateBaselineInternal(payload.driverId, payload.vehicleId);
+        }
+      }
 
       // Process pipeline for single telemetry event
       const pipelineResult = await processEventPipeline(payload);

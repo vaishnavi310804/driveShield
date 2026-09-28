@@ -1,11 +1,40 @@
-import { Accelerometer, Gyroscope } from 'expo-sensors';
 import {
   MotionTelemetryData,
   SensorAvailability,
   SensorCollectorOptions,
 } from '../models/sensor.types';
 
-export type SensorSubscription = ReturnType<typeof Accelerometer.addListener>;
+export type SensorSubscription = { remove(): void };
+
+let _accelModule: typeof import('expo-sensors/build/Accelerometer').default | null = null;
+let _accelLoaded = false;
+
+function getAccelerometerModule(): typeof import('expo-sensors/build/Accelerometer').default | null {
+  if (!_accelLoaded) {
+    _accelLoaded = true;
+    try {
+      _accelModule = require('expo-sensors/build/Accelerometer').default;
+    } catch {
+      _accelModule = null;
+    }
+  }
+  return _accelModule;
+}
+
+let _gyroModule: typeof import('expo-sensors/build/Gyroscope').default | null = null;
+let _gyroLoaded = false;
+
+function getGyroscopeModule(): typeof import('expo-sensors/build/Gyroscope').default | null {
+  if (!_gyroLoaded) {
+    _gyroLoaded = true;
+    try {
+      _gyroModule = require('expo-sensors/build/Gyroscope').default;
+    } catch {
+      _gyroModule = null;
+    }
+  }
+  return _gyroModule;
+}
 
 /**
  * Calculates total G-force magnitude from 3-axis accelerometer readings.
@@ -30,6 +59,7 @@ export function calculateGForce(x: number, y: number, z: number): number {
 export class MotionSensorCollector {
   private accelSubscription: SensorSubscription | null = null;
   private gyroSubscription: SensorSubscription | null = null;
+  private fallbackTimer: ReturnType<typeof setInterval> | null = null;
   private isCollecting: boolean = false;
 
   private latestAccel = { x: 0, y: 0, z: 0 };
@@ -39,10 +69,26 @@ export class MotionSensorCollector {
    * Checks if accelerometer and gyroscope hardware are available on the current device.
    */
   async checkAvailability(): Promise<SensorAvailability> {
-    const [accelerometer, gyroscope] = await Promise.all([
-      Accelerometer.isAvailableAsync().catch(() => false),
-      Gyroscope.isAvailableAsync().catch(() => false),
-    ]);
+    let accelerometer = false;
+    let gyroscope = false;
+
+    try {
+      const Accel = getAccelerometerModule();
+      if (Accel && typeof Accel.isAvailableAsync === 'function') {
+        accelerometer = await Accel.isAvailableAsync().catch(() => false);
+      }
+    } catch {
+      accelerometer = false;
+    }
+
+    try {
+      const Gyro = getGyroscopeModule();
+      if (Gyro && typeof Gyro.isAvailableAsync === 'function') {
+        gyroscope = await Gyro.isAvailableAsync().catch(() => false);
+      }
+    } catch {
+      gyroscope = false;
+    }
 
     return { accelerometer, gyroscope };
   }
@@ -54,8 +100,19 @@ export class MotionSensorCollector {
    */
   setUpdateInterval(intervalMs: number): void {
     const validInterval = Math.max(10, intervalMs);
-    Accelerometer.setUpdateInterval(validInterval);
-    Gyroscope.setUpdateInterval(validInterval);
+    try {
+      const Accel = getAccelerometerModule();
+      if (Accel && typeof Accel.setUpdateInterval === 'function') {
+        Accel.setUpdateInterval(validInterval);
+      }
+    } catch {}
+
+    try {
+      const Gyro = getGyroscopeModule();
+      if (Gyro && typeof Gyro.setUpdateInterval === 'function') {
+        Gyro.setUpdateInterval(validInterval);
+      }
+    } catch {}
   }
 
   /**
@@ -73,15 +130,10 @@ export class MotionSensorCollector {
     }
 
     const { updateIntervalMs = 200 } = options;
-    this.setUpdateInterval(updateIntervalMs);
+    const validInterval = Math.max(10, updateIntervalMs);
+    this.setUpdateInterval(validInterval);
 
     const availability = await this.checkAvailability();
-
-    if (!availability.accelerometer && !availability.gyroscope) {
-      throw new Error(
-        'Motion sensors (Accelerometer & Gyroscope) are unavailable on this device.'
-      );
-    }
 
     this.isCollecting = true;
 
@@ -113,17 +165,35 @@ export class MotionSensorCollector {
     };
 
     if (availability.accelerometer) {
-      this.accelSubscription = Accelerometer.addListener((data) => {
-        this.latestAccel = data;
-        emitNormalizedData();
-      });
+      try {
+        const Accel = getAccelerometerModule();
+        if (Accel && typeof Accel.addListener === 'function') {
+          this.accelSubscription = Accel.addListener((data: { x: number; y: number; z: number }) => {
+            this.latestAccel = data;
+            emitNormalizedData();
+          });
+        }
+      } catch {}
     }
 
     if (availability.gyroscope) {
-      this.gyroSubscription = Gyroscope.addListener((data) => {
-        this.latestGyro = data;
+      try {
+        const Gyro = getGyroscopeModule();
+        if (Gyro && typeof Gyro.addListener === 'function') {
+          this.gyroSubscription = Gyro.addListener((data: { x: number; y: number; z: number }) => {
+            this.latestGyro = data;
+            emitNormalizedData();
+          });
+        }
+      } catch {}
+    }
+
+    // Fallback periodic emissions if hardware listeners are unavailable or unlinked
+    if (!this.accelSubscription && !this.gyroSubscription) {
+      emitNormalizedData();
+      this.fallbackTimer = setInterval(() => {
         emitNormalizedData();
-      });
+      }, validInterval);
     }
   }
 
@@ -135,13 +205,22 @@ export class MotionSensorCollector {
     this.isCollecting = false;
 
     if (this.accelSubscription) {
-      this.accelSubscription.remove();
+      try {
+        this.accelSubscription.remove();
+      } catch {}
       this.accelSubscription = null;
     }
 
     if (this.gyroSubscription) {
-      this.gyroSubscription.remove();
+      try {
+        this.gyroSubscription.remove();
+      } catch {}
       this.gyroSubscription = null;
+    }
+
+    if (this.fallbackTimer !== null) {
+      clearInterval(this.fallbackTimer);
+      this.fallbackTimer = null;
     }
   }
 

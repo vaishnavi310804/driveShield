@@ -4,6 +4,7 @@ import Vehicle from "../vehicle/vehicle.model.js";
 import Driver from "../driver/driver.model.js";
 import Baseline from "../baseline/baseline.model.js";
 import Telemetry from "../telemetry/telemetry.model.js";
+import { calculateBaselineInternal } from "../baseline/baseline.controller.js";
 
 /**
  * Core reusable anomaly evaluation logic.
@@ -56,7 +57,14 @@ export const processAnomalyEvaluation = async (telemetryPayload) => {
     };
   }
 
-  const baseline = await Baseline.findOne({ driverId, vehicleId });
+  let baseline = await Baseline.findOne({ driverId, vehicleId });
+
+  if (!baseline) {
+    const calcResult = await calculateBaselineInternal(driverId, vehicleId);
+    if (calcResult?.success) {
+      baseline = calcResult.data;
+    }
+  }
 
   if (!baseline) {
     return {

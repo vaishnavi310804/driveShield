@@ -7,9 +7,62 @@ import { Card } from "../../src/components/Card";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { MetricItem } from "../../src/components/MetricItem";
 import { EmergencyAction } from "../../src/components/EmergencyAction";
+import { useAuth } from "../../src/modules/auth/AuthContext";
+import { useVehicle } from "../../src/modules/vehicle/VehicleContext";
+import { useTelemetryContext } from "../../src/modules/telemetry";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 
 export default function HomeScreen() {
+  const { user } = useAuth();
+  const { vehicle } = useVehicle();
+  const {
+    telemetryData,
+    vehicleSimulationMode,
+    driverStateSimulationMode,
+    baselineStatus,
+  } = useTelemetryContext();
+
+  const vehicleTitle = vehicle
+    ? `${vehicle.make} ${vehicle.model}`
+    : "No active vehicle registered";
+
+  const displaySpeed =
+    telemetryData?.vehicleData?.speed !== undefined
+      ? `${Math.round(telemetryData.vehicleData.speed)} km/h`
+      : "64 km/h";
+
+  const displayRpm =
+    telemetryData?.vehicleData?.rpm !== undefined
+      ? `${Math.round(telemetryData.vehicleData.rpm).toLocaleString()}`
+      : "2,140";
+
+  const engineStatus =
+    vehicleSimulationMode === "STALL"
+      ? "Stalled"
+      : vehicleSimulationMode === "CRITICAL_PARAMETER"
+      ? "Warning"
+      : "Normal";
+
+  const attentionLabel =
+    driverStateSimulationMode === "UNRESPONSIVE"
+      ? "Unresponsive"
+      : driverStateSimulationMode === "DROWSY"
+      ? "Drowsy"
+      : driverStateSimulationMode === "DISTRACTED"
+      ? "Distracted"
+      : "Focused";
+
+  const attentionBadgeType =
+    driverStateSimulationMode === "FOCUSED" ? "success" : "danger";
+
+  const fatigueStatus =
+    driverStateSimulationMode === "DROWSY" ? "Elevated" : "Normal";
+
+  const displayPerclos =
+    telemetryData?.driverState?.perclos !== undefined
+      ? `${telemetryData.driverState.perclos.toFixed(1)}%`
+      : "4.2%";
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <ScrollView
@@ -34,7 +87,14 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.badgeRow}>
-            <StatusBadge label="All Systems Normal" type="success" />
+            <StatusBadge
+              label={
+                baselineStatus === "READY"
+                  ? "Safety Baseline Ready"
+                  : "Establishing Baseline..."
+              }
+              type={baselineStatus === "READY" ? "success" : "info"}
+            />
           </View>
         </View>
 
@@ -55,13 +115,23 @@ export default function HomeScreen() {
         {/* 4. VEHICLE STATUS CARD */}
         <Card title="Vehicle Status" subtitle="Connected Telemetry">
           <View style={styles.rowBetweenMargin}>
-            <Text style={styles.vehicleName}>Toyota Camry</Text>
-            <StatusBadge label="Connected" type="success" />
+            <View style={{ flex: 1, marginRight: SPACING.sm }}>
+              <Text style={styles.vehicleName}>{vehicleTitle}</Text>
+              {vehicle && (
+                <Text style={styles.vehicleSubtitle}>
+                  {vehicle.year} • {vehicle.vehicleType.toUpperCase()} • {vehicle.licensePlate}
+                </Text>
+              )}
+            </View>
+            <StatusBadge
+              label={vehicle ? "Connected" : "Unlinked"}
+              type={vehicle ? "success" : "warning"}
+            />
           </View>
           <View style={styles.metricsRow}>
-            <MetricItem label="Speed" value="64 km/h" />
-            <MetricItem label="RPM" value="2,140" />
-            <MetricItem label="Engine" value="Normal" />
+            <MetricItem label="Speed" value={displaySpeed} />
+            <MetricItem label="RPM" value={displayRpm} />
+            <MetricItem label="Engine" value={engineStatus} />
           </View>
         </Card>
 
@@ -69,17 +139,17 @@ export default function HomeScreen() {
         <Card title="Driver Safety" subtitle="DMS Status">
           <View style={styles.rowBetweenMargin}>
             <Text style={TYPOGRAPHY.body}>Attention:</Text>
-            <StatusBadge label="Focused" type="success" />
+            <StatusBadge label={attentionLabel} type={attentionBadgeType} />
           </View>
           <View style={styles.driverMetricsRow}>
             <View style={styles.driverMetricItem}>
               <Text style={TYPOGRAPHY.caption}>Fatigue</Text>
-              <Text style={styles.driverMetricValue}>Normal</Text>
+              <Text style={styles.driverMetricValue}>{fatigueStatus}</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.driverMetricItem}>
               <Text style={TYPOGRAPHY.caption}>PERCLOS</Text>
-              <Text style={styles.driverMetricValue}>4.2%</Text>
+              <Text style={styles.driverMetricValue}>{displayPerclos}</Text>
             </View>
           </View>
         </Card>
@@ -180,6 +250,12 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.subHeader,
     fontSize: 16,
     color: COLORS.textPrimary,
+  },
+  vehicleSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    fontSize: 12,
   },
   metricsRow: {
     flexDirection: "row",

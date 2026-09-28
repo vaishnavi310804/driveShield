@@ -3,11 +3,13 @@ import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "../src/modules/auth/AuthContext";
-import { VehicleProvider } from "../src/modules/vehicle/VehicleContext";
+import { VehicleProvider, useVehicle } from "../src/modules/vehicle/VehicleContext";
+import { TelemetryProvider } from "../src/modules/telemetry";
 import { COLORS } from "../src/theme/theme";
 
 function RootLayoutNav() {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated, user } = useAuth();
+  const { status: vehicleStatus } = useVehicle();
   const segments = useSegments();
   const router = useRouter();
 
@@ -15,16 +17,33 @@ function RootLayoutNav() {
     if (isLoading) return;
 
     const inAuthGroup = (segments[0] as string) === "auth";
-
+    const inOnboardingGroup = (segments[0] as string) === "onboarding";
+    const currentSubSegment = segments[1] as string;
 
     if (!isAuthenticated && !inAuthGroup) {
       // Redirect unauthenticated user to login
       router.replace("/auth/login" as any);
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect authenticated user to tabs
-      router.replace("/(tabs)" as any);
+    } else if (isAuthenticated) {
+      if (!user?.driverId && currentSubSegment !== "driver") {
+        // Redirect authenticated user with no driver profile to driver setup
+        router.replace("/onboarding/driver" as any);
+      } else if (
+        user?.driverId &&
+        vehicleStatus === "NOT_FOUND" &&
+        currentSubSegment !== "vehicle"
+      ) {
+        // Redirect authenticated user with driver profile but no vehicle to vehicle setup
+        router.replace("/onboarding/vehicle" as any);
+      } else if (
+        user?.driverId &&
+        vehicleStatus === "AVAILABLE" &&
+        (inAuthGroup || inOnboardingGroup)
+      ) {
+        // Redirect fully setup user to tabs
+        router.replace("/(tabs)" as any);
+      }
     }
-  }, [isLoading, isAuthenticated, segments]);
+  }, [isLoading, isAuthenticated, user?.driverId, vehicleStatus, segments]);
 
   if (isLoading) {
     return (
@@ -43,6 +62,8 @@ function RootLayoutNav() {
     >
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding/driver" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding/vehicle" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="incident/verify"
@@ -73,8 +94,10 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <VehicleProvider>
-        <StatusBar style="light" />
-        <RootLayoutNav />
+        <TelemetryProvider>
+          <StatusBar style="light" />
+          <RootLayoutNav />
+        </TelemetryProvider>
       </VehicleProvider>
     </AuthProvider>
   );

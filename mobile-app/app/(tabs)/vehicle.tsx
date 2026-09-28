@@ -6,9 +6,12 @@ import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { Card } from "../../src/components/Card";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { MetricItem } from "../../src/components/MetricItem";
+import { useVehicle } from "../../src/modules/vehicle/VehicleContext";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 
 export default function VehicleScreen() {
+  const { vehicle, errorMessage } = useVehicle();
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <ScrollView
@@ -28,22 +31,35 @@ export default function VehicleScreen() {
               <Ionicons name="car-sport" size={26} color={COLORS.primary} />
             </View>
             <View style={styles.profileTitleContainer}>
-              <Text style={styles.vehicleName}>Toyota Camry</Text>
-              <Text style={styles.vehicleSubtext}>2022 • Sedan</Text>
+              <Text style={styles.vehicleName}>
+                {vehicle ? `${vehicle.make} ${vehicle.model}` : "No Active Vehicle"}
+              </Text>
+              <Text style={styles.vehicleSubtext}>
+                {vehicle
+                  ? `${vehicle.year} • ${vehicle.vehicleType.toUpperCase()}`
+                  : errorMessage || "No active vehicle registered."}
+              </Text>
             </View>
-            <StatusBadge label="Connected" type="success" />
+            <StatusBadge
+              label={vehicle ? "Connected" : "Unlinked"}
+              type={vehicle ? "success" : "warning"}
+            />
           </View>
 
-          <View style={styles.detailsGrid}>
-            <View style={styles.detailRow}>
-              <Text style={TYPOGRAPHY.body}>License Plate</Text>
-              <Text style={styles.detailValue}>ABC-1234</Text>
+          {vehicle && (
+            <View style={styles.detailsGrid}>
+              <View style={styles.detailRow}>
+                <Text style={TYPOGRAPHY.body}>License Plate</Text>
+                <Text style={styles.detailValue}>{vehicle.licensePlate}</Text>
+              </View>
+              {vehicle.color && (
+                <View style={styles.detailRowLast}>
+                  <Text style={TYPOGRAPHY.body}>Color</Text>
+                  <Text style={styles.detailValue}>{vehicle.color}</Text>
+                </View>
+              )}
             </View>
-            <View style={styles.detailRowLast}>
-              <Text style={TYPOGRAPHY.body}>Color</Text>
-              <Text style={styles.detailValue}>Silver</Text>
-            </View>
-          </View>
+          )}
         </Card>
 
         {/* 3. LIVE TELEMETRY CARD */}
