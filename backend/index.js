@@ -9,6 +9,8 @@ import baselineRoutes from "./src/modules/baseline/baseline.routes.js";
 import anomalyRoutes from "./src/modules/anomaly/anomaly.routes.js";
 import incidentRoutes from "./src/modules/incident/incident.routes.js";
 import responderRoutes from "./src/modules/responder/responder.routes.js";
+import authRoutes from "./src/modules/auth/auth.routes.js";
+import { protect } from "./src/middleware/auth.middleware.js";
 
 const app = express();
 
@@ -21,13 +23,16 @@ app.get("/", (req, res) => {
   res.send("API running");
 });
 
-app.use("/api/vehicles", vehicleRoutes);
-app.use("/api/drivers", driverRoutes);
-app.use("/api/telemetry", telemetryRoutes);
-app.use("/api/baselines", baselineRoutes);
-app.use("/api/anomalies", anomalyRoutes);
-app.use("/api/incidents", incidentRoutes);
-app.use("/api/responders", responderRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/vehicles", protect, vehicleRoutes);
+app.use("/api/drivers", protect, driverRoutes);
+app.use("/api/telemetry", protect, telemetryRoutes);
+app.use("/api/baselines", protect, baselineRoutes);
+app.use("/api/anomalies", protect, anomalyRoutes);
+app.use("/api/incidents", protect, incidentRoutes);
+app.use("/api/responders", protect, responderRoutes);
+
+
 
 app.use(errorHandler);
 

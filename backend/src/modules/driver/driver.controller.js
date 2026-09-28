@@ -2,10 +2,21 @@ import Driver from "./driver.model.js";
 
 export const createDriver = async (req, res, next) => {
   try {
-    const { userId, licenseNumber, phone, emergencyContact } = req.body;
+    const { userId, licenseNumber, phone, emergencyContact } = req.body || {};
+
+    let targetUserId = userId;
+    if (req.user) {
+      if (userId && String(userId) !== String(req.user._id)) {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot create a driver profile for another user.",
+        });
+      }
+      targetUserId = req.user._id;
+    }
 
     if (
-      !userId ||
+      !targetUserId ||
       !licenseNumber ||
       !phone ||
       !emergencyContact ||
@@ -20,11 +31,12 @@ export const createDriver = async (req, res, next) => {
     }
 
     const driver = await Driver.create({
-      userId,
+      userId: targetUserId,
       licenseNumber,
       phone,
       emergencyContact,
     });
+
 
     return res.status(201).json({
       success: true,

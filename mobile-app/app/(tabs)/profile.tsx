@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
@@ -8,7 +9,10 @@ import { StatusBadge } from "../../src/components/StatusBadge";
 import { SimulationControls } from "../../src/components/dev/SimulationControls";
 import { useUnifiedTelemetry } from "../../src/modules/telemetry/hooks/useUnifiedTelemetry";
 import { useTelemetryTransmission } from "../../src/modules/telemetry/hooks/useTelemetryTransmission";
+import { useAuth } from "../../src/modules/auth/AuthContext";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
+
+import { useVehicle } from "../../src/modules/vehicle/VehicleContext";
 
 const DRIVER_DATA = {
   name: "Alex Morgan",
@@ -25,14 +29,10 @@ const EMERGENCY_CONTACT = {
   phone: "+1 555 010 5678",
 };
 
-const VEHICLE_DATA = {
-  name: "Toyota Camry",
-  yearType: "2022 • Sedan",
-  licensePlate: "ABC-1234",
-  status: "Connected",
-};
-
 export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+  const { vehicle, vehicleId, status: vehicleStatus, errorMessage: vehicleError } = useVehicle();
+
   // 1. Unified Telemetry Aggregator (5 sources)
   const {
     data: unifiedData,
@@ -61,11 +61,19 @@ export default function ProfileScreen() {
     start: startTransmission,
   } = useTelemetryTransmission({
     transmissionIntervalMs: 1000,
+    driverId: user?.driverId || undefined,
+    vehicleId: vehicleId || undefined,
   });
 
   useEffect(() => {
-    startTransmission(() => unifiedDataRef.current);
-  }, []);
+    if (user?.driverId && vehicleId) {
+      startTransmission(() => unifiedDataRef.current);
+    }
+  }, [user?.driverId, vehicleId]);
+
+  const displayName = user?.fullName || DRIVER_DATA.name;
+  const displayEmail = user?.email || DRIVER_DATA.phone;
+  const displayDriverId = user?.driverId || "Driver profile is not linked.";
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -98,16 +106,16 @@ export default function ProfileScreen() {
               <Ionicons name="person" size={28} color={COLORS.primary} />
             </View>
             <View style={styles.profileTitleContainer}>
-              <Text style={styles.driverName}>{DRIVER_DATA.name}</Text>
-              <Text style={styles.driverId}>Driver ID: {DRIVER_DATA.driverId}</Text>
+              <Text style={styles.driverName}>{displayName}</Text>
+              <Text style={styles.driverId}>{displayEmail}</Text>
             </View>
           </View>
 
           <View style={styles.divider} />
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>License Number:</Text>
-            <Text style={styles.infoValue}>{DRIVER_DATA.licenseNumber}</Text>
+            <Text style={styles.infoLabel}>Driver Ref ID:</Text>
+            <Text style={styles.infoValue}>{displayDriverId}</Text>
           </View>
 
           <View style={styles.infoRow}>
@@ -119,13 +127,25 @@ export default function ProfileScreen() {
           <View style={styles.statusContainer}>
             <View style={styles.statusItem}>
               <Text style={styles.statusLabel}>Driver Status</Text>
-              <StatusBadge label={DRIVER_DATA.driverStatus} type="success" />
+              <StatusBadge
+                label={user?.driverId ? "Linked" : "Not Linked"}
+                type={user?.driverId ? "success" : "warning"}
+              />
             </View>
             <View style={styles.statusItem}>
               <Text style={styles.statusLabel}>Profile Status</Text>
               <StatusBadge label={DRIVER_DATA.profileStatus} type="info" />
             </View>
           </View>
+
+          {!user?.driverId && (
+            <View style={styles.unlinkedBanner}>
+              <Ionicons name="warning-outline" size={16} color="#F59E0B" style={{ marginRight: 6 }} />
+              <Text style={styles.unlinkedBannerText}>
+                Driver profile is not linked. Telemetry transmission requires an active driver profile.
+              </Text>
+            </View>
+          )}
         </Card>
 
         {/* 4. EMERGENCY CONTACT */}
@@ -150,11 +170,22 @@ export default function ProfileScreen() {
               <Ionicons name="car-sport-outline" size={22} color={COLORS.primary} />
             </View>
             <View style={styles.vehicleDetails}>
-              <Text style={styles.vehicleName}>{VEHICLE_DATA.name}</Text>
-              <Text style={styles.vehicleSubtext}>{VEHICLE_DATA.yearType}</Text>
-              <Text style={styles.licensePlate}>License Plate: {VEHICLE_DATA.licensePlate}</Text>
+              <Text style={styles.vehicleName}>
+                {vehicle ? `${vehicle.make} ${vehicle.model}` : "No active vehicle registered"}
+              </Text>
+              <Text style={styles.vehicleSubtext}>
+                {vehicle
+                  ? `${vehicle.year} • ${vehicle.vehicleType.toUpperCase()}`
+                  : vehicleError || "No active vehicle profile found."}
+              </Text>
+              {vehicle && (
+                <Text style={styles.licensePlate}>License Plate: {vehicle.licensePlate}</Text>
+              )}
             </View>
-            <StatusBadge label={VEHICLE_DATA.status} type="success" />
+            <StatusBadge
+              label={vehicle ? "Active" : "Unlinked"}
+              type={vehicle ? "success" : "warning"}
+            />
           </View>
         </Card>
 
@@ -175,10 +206,30 @@ export default function ProfileScreen() {
             </View>
           </View>
         </Card>
+
+        {/* 7. LOGOUT BUTTON */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.logoutButton,
+            pressed && styles.logoutButtonPressed,
+          ]}
+          onPress={logout}
+          accessibilityRole="button"
+          accessibilityLabel="Sign Out"
+        >
+          <Ionicons
+            name="log-out-outline"
+            size={20}
+            color={COLORS.danger}
+            style={{ marginRight: SPACING.xs }}
+          />
+          <Text style={styles.logoutButtonText}>Sign Out</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -259,6 +310,22 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
     marginRight: 2,
+  },
+  unlinkedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#451A03",
+    borderColor: "#78350F",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  unlinkedBannerText: {
+    ...TYPOGRAPHY.caption,
+    color: "#FBBF24",
+    flex: 1,
+    fontSize: 12,
   },
   contactCardContent: {
     flexDirection: "row",
@@ -345,4 +412,25 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     lineHeight: 18,
   },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.danger,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  logoutButtonPressed: {
+    opacity: 0.8,
+  },
+  logoutButtonText: {
+    ...TYPOGRAPHY.cardTitle,
+    color: COLORS.danger,
+    fontSize: 15,
+  },
 });
+

@@ -7,7 +7,9 @@ import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { Card } from "../../src/components/Card";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
-import { API_BASE_URL, DEMO_DRIVER_ID } from "../../src/config/api.config";
+import { API_BASE_URL } from "../../src/config/api.config";
+import { useAuth } from "../../src/modules/auth/AuthContext";
+import { authenticatedFetch } from "../../src/modules/auth/apiClient";
 
 interface IncidentRecord {
   id: string;
@@ -176,6 +178,7 @@ const mapBackendIncidentToRecord = (item: any): IncidentRecord => {
 };
 
 export default function IncidentsScreen() {
+  const { user } = useAuth();
   const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -184,9 +187,15 @@ export default function IncidentsScreen() {
     setIsLoading(true);
     setErrorMessage(null);
 
+    if (!user?.driverId) {
+      setIsLoading(false);
+      setIncidents([]);
+      return;
+    }
+
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/incidents?driverId=${DEMO_DRIVER_ID}&limit=20`
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/incidents?driverId=${user.driverId}&limit=20`
       );
       const data = await response.json();
 
@@ -330,9 +339,13 @@ export default function IncidentsScreen() {
               color={COLORS.textMuted}
               style={{ marginBottom: SPACING.sm }}
             />
-            <Text style={styles.emptyTitle}>No Logged Incidents</Text>
+            <Text style={styles.emptyTitle}>
+              {!user?.driverId ? "Driver Profile Not Linked" : "No Logged Incidents"}
+            </Text>
             <Text style={styles.emptySubtext}>
-              No incident records found for this driver profile.
+              {!user?.driverId
+                ? "Your account is not linked to a driver profile. No incident history available."
+                : "No incident records found for this driver profile."}
             </Text>
           </Card>
         )}

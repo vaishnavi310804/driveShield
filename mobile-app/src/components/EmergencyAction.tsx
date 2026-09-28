@@ -3,14 +3,29 @@ import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { COLORS, SPACING, TYPOGRAPHY } from "../theme/theme";
-import { API_BASE_URL, DEMO_DRIVER_ID, DEMO_VEHICLE_ID } from "../config/api.config";
+import { API_BASE_URL } from "../config/api.config";
+import { useAuth } from "../modules/auth/AuthContext";
+import { useVehicle } from "../modules/vehicle/VehicleContext";
+import { authenticatedFetch } from "../modules/auth/apiClient";
 
 export const EmergencyAction: React.FC = () => {
+  const { user } = useAuth();
+  const { vehicleId } = useVehicle();
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleEmergencyPress = async () => {
     if (isTriggering) return;
+
+    if (!user?.driverId) {
+      setErrorMessage("Driver profile is not linked. Emergency actions require a linked driver profile.");
+      return;
+    }
+
+    if (!vehicleId) {
+      setErrorMessage("No active vehicle is registered. Emergency actions require an active vehicle.");
+      return;
+    }
 
     setIsTriggering(true);
     setErrorMessage(null);
@@ -18,8 +33,8 @@ export const EmergencyAction: React.FC = () => {
     try {
       // Step 1: Send telemetry anomaly payload to POST /api/anomalies
       const anomalyPayload = {
-        driverId: DEMO_DRIVER_ID,
-        vehicleId: DEMO_VEHICLE_ID,
+        driverId: user.driverId,
+        vehicleId: vehicleId,
         timestamp: new Date().toISOString(),
         location: {
           latitude: 37.7749,
@@ -39,7 +54,7 @@ export const EmergencyAction: React.FC = () => {
         },
       };
 
-      const anomalyRes = await fetch(`${API_BASE_URL}/anomalies`, {
+      const anomalyRes = await authenticatedFetch(`${API_BASE_URL}/anomalies`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -65,7 +80,7 @@ export const EmergencyAction: React.FC = () => {
       }
 
       // Step 3: Call POST /api/incidents/trigger with anomalyEventId
-      const triggerRes = await fetch(`${API_BASE_URL}/incidents/trigger`, {
+      const triggerRes = await authenticatedFetch(`${API_BASE_URL}/incidents/trigger`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

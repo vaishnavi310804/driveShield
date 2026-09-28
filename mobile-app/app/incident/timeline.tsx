@@ -8,6 +8,7 @@ import { Card } from "../../src/components/Card";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 import { API_BASE_URL } from "../../src/config/api.config";
+import { authenticatedFetch } from "../../src/modules/auth/apiClient";
 
 interface TimelineEventDetails {
   type?: string;
@@ -55,7 +56,7 @@ export default function IncidentTimelineScreen() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/timeline`);
+      const response = await authenticatedFetch(`${API_BASE_URL}/incidents/${incidentId}/timeline`);
       const data = await response.json();
 
       if (response.ok && data?.success) {

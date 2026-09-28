@@ -83,12 +83,25 @@ export class DeviceContextCollector {
    * Checks if battery and network features are supported on this device.
    */
   async checkAvailability(): Promise<DeviceContextAvailability> {
-    const [battery, network] = await Promise.all([
-      Battery.isAvailableAsync().catch(() => false),
-      Network.getNetworkStateAsync()
-        .then(() => true)
-        .catch(() => false),
-    ]);
+    let battery = false;
+    let network = false;
+
+    try {
+      if (typeof Battery.isAvailableAsync === "function") {
+        battery = await Battery.isAvailableAsync().catch(() => false);
+      }
+    } catch {
+      battery = false;
+    }
+
+    try {
+      if (typeof Network.getNetworkStateAsync === "function") {
+        await Network.getNetworkStateAsync();
+        network = true;
+      }
+    } catch {
+      network = false;
+    }
 
     return { battery, network };
   }
@@ -97,11 +110,35 @@ export class DeviceContextCollector {
    * Fetches an immediate snapshot of current device battery and network state.
    */
   async fetchCurrentContext(): Promise<DeviceContextTelemetryData> {
-    const [rawLevel, batteryState, rawNetwork] = await Promise.all([
-      Battery.getBatteryLevelAsync().catch(() => -1),
-      Battery.getBatteryStateAsync().catch(() => Battery.BatteryState.UNKNOWN),
-      Network.getNetworkStateAsync().catch(() => null),
-    ]);
+    let rawLevel: number | null = -1;
+    let batteryState: Battery.BatteryState | null = Battery.BatteryState.UNKNOWN;
+    let rawNetwork: Network.NetworkState | null = null;
+
+    try {
+      const isBatteryAvailable = typeof Battery.isAvailableAsync === "function"
+        ? await Battery.isAvailableAsync().catch(() => false)
+        : false;
+
+      if (isBatteryAvailable) {
+        const [level, state] = await Promise.all([
+          Battery.getBatteryLevelAsync().catch(() => -1),
+          Battery.getBatteryStateAsync().catch(() => Battery.BatteryState.UNKNOWN),
+        ]);
+        rawLevel = level;
+        batteryState = state;
+      }
+    } catch {
+      rawLevel = -1;
+      batteryState = Battery.BatteryState.UNKNOWN;
+    }
+
+    try {
+      if (typeof Network.getNetworkStateAsync === "function") {
+        rawNetwork = await Network.getNetworkStateAsync().catch(() => null);
+      }
+    } catch {
+      rawNetwork = null;
+    }
 
     this.latestBatteryLevel = normalizeBatteryLevel(rawLevel);
     this.latestIsCharging = normalizeChargingState(batteryState);
@@ -148,17 +185,23 @@ export class DeviceContextCollector {
       });
     };
 
-    // Event listeners for battery changes (event-driven, no high frequency polling)
+    // Event listeners for battery changes (event-driven, guarded by availability)
     try {
-      this.batteryLevelSub = Battery.addBatteryLevelListener(({ batteryLevel }) => {
-        this.latestBatteryLevel = normalizeBatteryLevel(batteryLevel);
-        emitNormalizedData();
-      });
+      const isBatteryAvailable = typeof Battery.isAvailableAsync === "function"
+        ? await Battery.isAvailableAsync().catch(() => false)
+        : false;
 
-      this.batteryStateSub = Battery.addBatteryStateListener(({ batteryState }) => {
-        this.latestIsCharging = normalizeChargingState(batteryState);
-        emitNormalizedData();
-      });
+      if (isBatteryAvailable && typeof Battery.addBatteryLevelListener === "function") {
+        this.batteryLevelSub = Battery.addBatteryLevelListener(({ batteryLevel }) => {
+          this.latestBatteryLevel = normalizeBatteryLevel(batteryLevel);
+          emitNormalizedData();
+        });
+
+        this.batteryStateSub = Battery.addBatteryStateListener(({ batteryState }) => {
+          this.latestIsCharging = normalizeChargingState(batteryState);
+          emitNormalizedData();
+        });
+      }
     } catch {
       // Event listeners unsupported on simulator or device
     }

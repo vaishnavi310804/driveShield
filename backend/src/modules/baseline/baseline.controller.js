@@ -16,7 +16,7 @@ const classifyMotion = (reading) => {
 
 export const calculateBaseline = async (req, res, next) => {
   try {
-    const { driverId, vehicleId } = req.body;
+    const { driverId, vehicleId } = req.body || {};
 
     if (!driverId || !vehicleId) {
       return res.status(400).json({
@@ -46,6 +46,37 @@ export const calculateBaseline = async (req, res, next) => {
         message: "Referenced driver or vehicle profile not found.",
       });
     }
+
+    if (req.user) {
+      const authDriver = await Driver.findOne({ userId: req.user._id });
+      if (!authDriver) {
+        return res.status(403).json({
+          success: false,
+          message: "Authenticated user does not have an active Driver profile.",
+        });
+      }
+
+      if (
+        String(driverId) !== String(authDriver._id) &&
+        String(driverId) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot calculate baseline for another driver.",
+        });
+      }
+
+      if (
+        String(vehicleExists.driverId) !== String(req.user._id) &&
+        String(vehicleExists.driverId) !== String(authDriver._id)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Vehicle does not belong to the authenticated driver.",
+        });
+      }
+    }
+
 
     const telemetryRecords = await Telemetry.find({ driverId, vehicleId });
 

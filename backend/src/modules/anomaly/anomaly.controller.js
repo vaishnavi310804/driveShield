@@ -258,12 +258,34 @@ export const processAnomalyEvaluation = async (telemetryPayload) => {
  */
 export const evaluateAnomaly = async (req, res, next) => {
   try {
+    if (req.user) {
+      const authDriver = await Driver.findOne({ userId: req.user._id });
+      if (!authDriver) {
+        return res.status(403).json({
+          success: false,
+          message: "Authenticated user does not have an active Driver profile.",
+        });
+      }
+
+      if (
+        req.body?.driverId &&
+        String(req.body.driverId) !== String(authDriver._id) &&
+        String(req.body.driverId) !== String(req.user._id)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot evaluate anomaly for another driver.",
+        });
+      }
+    }
+
     const result = await processAnomalyEvaluation(req.body);
     return res.status(result.status).json({
       success: result.status < 400,
       message: result.message,
       data: result.data,
     });
+
   } catch (error) {
     if (error.name === "ValidationError" || error.name === "CastError") {
       return res.status(400).json({

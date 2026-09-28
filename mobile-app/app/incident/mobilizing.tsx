@@ -7,6 +7,7 @@ import { Card } from "../../src/components/Card";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 import { API_BASE_URL } from "../../src/config/api.config";
+import { authenticatedFetch } from "../../src/modules/auth/apiClient";
 
 type MobilizingState =
   | "SEARCHING"
@@ -54,7 +55,7 @@ export default function MobilizingScreen() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/mobilize`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/incidents/${incidentId}/mobilize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -105,7 +106,7 @@ export default function MobilizingScreen() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/incidents/${incidentId}/responders/${responder._id}/accept`,
         {
           method: "POST",
@@ -137,7 +138,7 @@ export default function MobilizingScreen() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_BASE_URL}/incidents/${incidentId}/responders/${responder._id}/unable`,
         {
           method: "POST",
@@ -180,7 +181,7 @@ export default function MobilizingScreen() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/escalate`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/incidents/${incidentId}/escalate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

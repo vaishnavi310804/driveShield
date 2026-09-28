@@ -32,12 +32,4 @@ const getBaseUrl = (): string => {
 
 export const API_BASE_URL = getBaseUrl();
 
-/**
- * Demo driver and vehicle ObjectIds configured via Expo env vars.
- * Defaults to the active seed records in MongoDB.
- */
-export const DEMO_DRIVER_ID =
-  process.env.EXPO_PUBLIC_DRIVER_ID || "6ab9260a382dfb48c9712dc0";
 
-export const DEMO_VEHICLE_ID =
-  process.env.EXPO_PUBLIC_VEHICLE_ID || "6ab9263060399c0c071c6af1";

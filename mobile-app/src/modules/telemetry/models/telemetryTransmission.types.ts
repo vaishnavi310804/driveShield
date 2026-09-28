@@ -69,8 +69,8 @@ export interface BackendTelemetryPayload {
 export interface TelemetryTransmissionOptions {
   /** Transmission interval in milliseconds (default: 1000ms = 1 Hz) */
   transmissionIntervalMs?: number;
-  /** Driver ObjectId (defaults to DEMO_DRIVER_ID from api.config) */
+  /** Driver ObjectId of authenticated driver */
   driverId?: string;
-  /** Vehicle ObjectId (defaults to DEMO_VEHICLE_ID from api.config) */
+  /** Vehicle ObjectId of authenticated user vehicle */
   vehicleId?: string;
 }

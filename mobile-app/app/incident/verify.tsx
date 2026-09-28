@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { COLORS, SPACING, TYPOGRAPHY } from "../../src/theme/theme";
 import { API_BASE_URL } from "../../src/config/api.config";
+import { authenticatedFetch } from "../../src/modules/auth/apiClient";
 
 type VerificationState = "VERIFYING" | "RESPONSIVE" | "IMPAIRED" | "NO_RESPONSE";
 
@@ -46,7 +47,7 @@ export default function IncidentVerifyScreen() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/verify`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/incidents/${incidentId}/verify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -962,6 +962,20 @@ export const getIncidentTimeline = async (req, res, next) => {
       });
     }
 
+    if (req.user) {
+      const authDriver = await Driver.findOne({ userId: req.user._id });
+      const isOwner =
+        String(incident.driverId) === String(req.user._id) ||
+        (authDriver && String(incident.driverId) === String(authDriver._id));
+
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot access timeline for another driver's incident.",
+        });
+      }
+    }
+
     const [transitions, responderActions, notifications, anomalyEvents] =
       await Promise.all([
         IncidentStateTransition.find({ incidentId: incident._id }),
@@ -1082,11 +1096,28 @@ export const getIncidents = async (req, res, next) => {
   try {
     let { driverId, vehicleId, limit } = req.query;
 
-    if (!driverId) {
+    if (req.user) {
+      const authDriver = await Driver.findOne({ userId: req.user._id });
+      if (req.query.driverId) {
+        if (
+          String(req.query.driverId) !== String(req.user._id) &&
+          (!authDriver || String(req.query.driverId) !== String(authDriver._id))
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: "Cannot access incident records of another driver.",
+          });
+        }
+      } else {
+        const allowedDriverIds = [req.user._id];
+        if (authDriver) allowedDriverIds.push(authDriver._id);
+        driverId = { $in: allowedDriverIds };
+      }
+    } else if (!driverId) {
       driverId = "6ab9260a382dfb48c9712dc0";
     }
 
-    if (driverId && !mongoose.Types.ObjectId.isValid(driverId)) {
+    if (driverId && typeof driverId === "string" && !mongoose.Types.ObjectId.isValid(driverId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid driver ID format.",
@@ -1120,6 +1151,7 @@ export const getIncidents = async (req, res, next) => {
       count: incidents.length,
       data: incidents,
     });
+
   } catch (error) {
     if (error.name === "ValidationError" || error.name === "CastError") {
       return res.status(400).json({

@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import User from "../models/user.model.js";
+import User from "../modules/auth/auth.model.js";
 
 export const protect = async (req, res, next) => {
   try {
@@ -13,10 +13,40 @@ export const protect = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized. Token missing.",
+      });
+    }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET environment variable is missing.");
+      return res.status(500).json({
+        success: false,
+        message: "Server configuration error.",
+      });
+    }
 
-    const user = await User.findById(decoded.id).select("-password").populate("roleId");
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtError) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired token.",
+      });
+    }
+
+    const userId = decoded.userId || decoded.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token payload.",
+      });
+    }
+
+    const user = await User.findById(userId).select("-password");
 
     if (!user) {
       return res.status(401).json({
@@ -25,43 +55,11 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    if (!user.isActive) {
-      return res.status(403).json({
+    if (user.isActive === false) {
+      return res.status(401).json({
         success: false,
-        message: "Your account has been deactivated.",
+        message: "User account is deactivated.",
       });
-    }
-
-    if (decoded.sessionId) {
-      const session = await Session.findOne({
-        _id: decoded.sessionId,
-        userId: decoded.id,
-      });
-
-      if (
-        !session ||
-        session.isRevoked ||
-        (session.expiresAt && new Date(session.expiresAt) <= new Date())
-      ) {
-        return res.status(401).json({
-          success: false,
-          code: "SESSION_REVOKED",
-          message: "Your session has been revoked. Please log in again.",
-        });
-      }
-
-      const now = new Date();
-      if (
-        !session.lastActivityAt ||
-        now.getTime() - new Date(session.lastActivityAt).getTime() > 5 * 60 * 1000
-      ) {
-        Session.findByIdAndUpdate(session._id, { lastActivityAt: now }).catch((err) =>
-          console.error("Non-blocking lastActivityAt update error:", err)
-        );
-      }
-
-      req.sessionId = decoded.sessionId;
-      user.sessionId = decoded.sessionId;
     }
 
     req.user = user;
@@ -70,7 +68,7 @@ export const protect = async (req, res, next) => {
     console.error("Protect Middleware Error:", error);
     return res.status(401).json({
       success: false,
-      message: error.message || "Invalid or expired token.",
+      message: "Authentication failed.",
     });
   }
 };

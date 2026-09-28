@@ -120,6 +120,47 @@ export const ingestTelemetry = async (req, res, next) => {
       }
     }
 
+    if (req.user) {
+      const authDriver = await Driver.findOne({ userId: req.user._id });
+      if (!authDriver) {
+        return res.status(403).json({
+          success: false,
+          message: "Authenticated user does not have an active Driver profile.",
+        });
+      }
+
+      for (const event of events) {
+        if (
+          event.driverId &&
+          String(event.driverId) !== String(authDriver._id) &&
+          String(event.driverId) !== String(req.user._id)
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: "Cannot submit telemetry on behalf of another driver.",
+          });
+        }
+
+        const vDoc = await Vehicle.findById(event.vehicleId);
+        if (!vDoc) {
+          return res.status(404).json({
+            success: false,
+            message: "Referenced vehicle profile not found.",
+          });
+        }
+
+        if (
+          String(vDoc.driverId) !== String(req.user._id) &&
+          String(vDoc.driverId) !== String(authDriver._id)
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: "Vehicle does not belong to the authenticated driver.",
+          });
+        }
+      }
+    }
+
     const vehicleIds = [
       ...new Set(events.map((e) => e.vehicleId).filter(Boolean)),
     ];
@@ -135,6 +176,7 @@ export const ingestTelemetry = async (req, res, next) => {
         });
       }
     }
+
 
     const [vehicleCount, driverCount] = await Promise.all([
       Vehicle.countDocuments({ _id: { $in: vehicleIds } }),

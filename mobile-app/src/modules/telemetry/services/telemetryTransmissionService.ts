@@ -1,4 +1,5 @@
-import { API_BASE_URL, DEMO_DRIVER_ID, DEMO_VEHICLE_ID } from '../../../config/api.config';
+import { API_BASE_URL } from '../../../config/api.config';
+import { authenticatedFetch } from '../../auth/apiClient';
 import {
   BackendTelemetryPayload,
   TelemetryTransmissionOptions,
@@ -12,8 +13,8 @@ import { UnifiedTelemetryData } from '../models/unifiedTelemetry.types';
  */
 export function mapUnifiedTelemetryToBackendPayload(
   data: UnifiedTelemetryData,
-  driverId: string = DEMO_DRIVER_ID,
-  vehicleId: string = DEMO_VEHICLE_ID
+  driverId: string,
+  vehicleId: string
 ): BackendTelemetryPayload {
   const payload: BackendTelemetryPayload = {
     vehicleId,
@@ -100,9 +101,21 @@ export class TelemetryTransmissionService {
    */
   async sendTelemetry(
     data: UnifiedTelemetryData,
-    driverId: string = DEMO_DRIVER_ID,
-    vehicleId: string = DEMO_VEHICLE_ID
+    driverId?: string,
+    vehicleId?: string
   ): Promise<boolean> {
+    if (!driverId) {
+      this.status = 'ERROR';
+      this.lastError = 'Driver profile is not linked.';
+      return false;
+    }
+
+    if (!vehicleId) {
+      this.status = 'ERROR';
+      this.lastError = 'Vehicle profile is not linked.';
+      return false;
+    }
+
     if (this.isRequestInFlight) {
       return false; // Skip if a request is already in-flight
     }
@@ -112,7 +125,7 @@ export class TelemetryTransmissionService {
 
     try {
       const payload = mapUnifiedTelemetryToBackendPayload(data, driverId, vehicleId);
-      const res = await fetch(`${API_BASE_URL}/telemetry`, {
+      const res = await authenticatedFetch(`${API_BASE_URL}/telemetry`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,9 +170,21 @@ export class TelemetryTransmissionService {
 
     const {
       transmissionIntervalMs = 1000,
-      driverId = DEMO_DRIVER_ID,
-      vehicleId = DEMO_VEHICLE_ID,
+      driverId,
+      vehicleId,
     } = options;
+
+    if (!driverId) {
+      this.status = 'ERROR';
+      this.lastError = 'Driver profile is not linked.';
+      return;
+    }
+
+    if (!vehicleId) {
+      this.status = 'ERROR';
+      this.lastError = 'Vehicle profile is not linked.';
+      return;
+    }
 
     const validInterval = Math.max(200, transmissionIntervalMs);
     this.isTransmitting = true;
@@ -174,7 +199,6 @@ export class TelemetryTransmissionService {
         return; // Skip tick if telemetry payload is not ready
       }
 
-      await this.sendTelemetry(latestData, driverId, vehicleId);
     }, validInterval);
   }
 
