@@ -1,5 +1,5 @@
-import * as Battery from 'expo-battery';
-import * as Network from 'expo-network';
+import type * as BatteryTypes from 'expo-battery';
+import type * as NetworkTypes from 'expo-network';
 import {
   DeviceContextAvailability,
   DeviceContextCollectorOptions,
@@ -7,9 +7,37 @@ import {
   NetworkType,
 } from '../models/deviceContext.types';
 
-export type BatterySubscription = ReturnType<
-  typeof Battery.addBatteryLevelListener
->;
+export type BatterySubscription = { remove(): void };
+
+let _batteryModule: typeof import('expo-battery') | null = null;
+let _batteryModuleLoaded = false;
+
+function getBatteryModule(): typeof import('expo-battery') | null {
+  if (!_batteryModuleLoaded) {
+    _batteryModuleLoaded = true;
+    try {
+      _batteryModule = require('expo-battery');
+    } catch {
+      _batteryModule = null;
+    }
+  }
+  return _batteryModule;
+}
+
+let _networkModule: typeof import('expo-network') | null = null;
+let _networkModuleLoaded = false;
+
+function getNetworkModule(): typeof import('expo-network') | null {
+  if (!_networkModuleLoaded) {
+    _networkModuleLoaded = true;
+    try {
+      _networkModule = require('expo-network');
+    } catch {
+      _networkModule = null;
+    }
+  }
+  return _networkModule;
+}
 
 /**
  * Normalizes battery level from fractional (0.0 - 1.0) to integer percentage (0 - 100).
@@ -35,12 +63,16 @@ export function normalizeBatteryLevel(rawLevel: number | null | undefined): numb
  * @param state - BatteryState from expo-battery
  * @returns true if state is CHARGING or FULL
  */
-export function normalizeChargingState(state: Battery.BatteryState | null | undefined): boolean {
-  if (!state) return false;
-  return (
-    state === Battery.BatteryState.CHARGING ||
-    state === Battery.BatteryState.FULL
-  );
+export function normalizeChargingState(state: number | BatteryTypes.BatteryState | null | undefined): boolean {
+  if (typeof state !== 'number') return false;
+  const Battery = getBatteryModule();
+  if (Battery?.BatteryState) {
+    return (
+      state === Battery.BatteryState.CHARGING ||
+      state === Battery.BatteryState.FULL
+    );
+  }
+  return state === 2 || state === 3;
 }
 
 /**
@@ -50,19 +82,24 @@ export function normalizeChargingState(state: Battery.BatteryState | null | unde
  * @returns Normalized NetworkType
  */
 export function normalizeNetworkState(
-  networkState: Network.NetworkState | null | undefined
+  networkState: NetworkTypes.NetworkState | null | undefined
 ): NetworkType {
   if (!networkState) return 'UNKNOWN';
 
-  if (!networkState.isConnected || networkState.type === Network.NetworkStateType.NONE) {
+  const Network = getNetworkModule();
+  const NONE_TYPE = Network?.NetworkStateType?.NONE || 'NONE';
+  const WIFI_TYPE = Network?.NetworkStateType?.WIFI || 'WIFI';
+  const CELLULAR_TYPE = Network?.NetworkStateType?.CELLULAR || 'CELLULAR';
+
+  if (!networkState.isConnected || networkState.type === NONE_TYPE) {
     return 'NONE';
   }
 
-  if (networkState.type === Network.NetworkStateType.WIFI) {
+  if (networkState.type === WIFI_TYPE) {
     return 'WIFI';
   }
 
-  if (networkState.type === Network.NetworkStateType.CELLULAR) {
+  if (networkState.type === CELLULAR_TYPE) {
     return 'CELLULAR';
   }
 
@@ -87,7 +124,8 @@ export class DeviceContextCollector {
     let network = false;
 
     try {
-      if (typeof Battery.isAvailableAsync === "function") {
+      const Battery = getBatteryModule();
+      if (Battery && typeof Battery.isAvailableAsync === 'function') {
         battery = await Battery.isAvailableAsync().catch(() => false);
       }
     } catch {
@@ -95,7 +133,8 @@ export class DeviceContextCollector {
     }
 
     try {
-      if (typeof Network.getNetworkStateAsync === "function") {
+      const Network = getNetworkModule();
+      if (Network && typeof Network.getNetworkStateAsync === 'function') {
         await Network.getNetworkStateAsync();
         network = true;
       }
@@ -111,29 +150,31 @@ export class DeviceContextCollector {
    */
   async fetchCurrentContext(): Promise<DeviceContextTelemetryData> {
     let rawLevel: number | null = -1;
-    let batteryState: Battery.BatteryState | null = Battery.BatteryState.UNKNOWN;
-    let rawNetwork: Network.NetworkState | null = null;
+    let batteryState: number | BatteryTypes.BatteryState | null = 0;
+    let rawNetwork: NetworkTypes.NetworkState | null = null;
 
     try {
-      const isBatteryAvailable = typeof Battery.isAvailableAsync === "function"
+      const Battery = getBatteryModule();
+      const isBatteryAvailable = Battery && typeof Battery.isAvailableAsync === 'function'
         ? await Battery.isAvailableAsync().catch(() => false)
         : false;
 
-      if (isBatteryAvailable) {
+      if (isBatteryAvailable && Battery) {
         const [level, state] = await Promise.all([
           Battery.getBatteryLevelAsync().catch(() => -1),
-          Battery.getBatteryStateAsync().catch(() => Battery.BatteryState.UNKNOWN),
+          Battery.getBatteryStateAsync().catch(() => 0),
         ]);
         rawLevel = level;
         batteryState = state;
       }
     } catch {
       rawLevel = -1;
-      batteryState = Battery.BatteryState.UNKNOWN;
+      batteryState = 0;
     }
 
     try {
-      if (typeof Network.getNetworkStateAsync === "function") {
+      const Network = getNetworkModule();
+      if (Network && typeof Network.getNetworkStateAsync === 'function') {
         rawNetwork = await Network.getNetworkStateAsync().catch(() => null);
       }
     } catch {
@@ -187,11 +228,12 @@ export class DeviceContextCollector {
 
     // Event listeners for battery changes (event-driven, guarded by availability)
     try {
-      const isBatteryAvailable = typeof Battery.isAvailableAsync === "function"
+      const Battery = getBatteryModule();
+      const isBatteryAvailable = Battery && typeof Battery.isAvailableAsync === 'function'
         ? await Battery.isAvailableAsync().catch(() => false)
         : false;
 
-      if (isBatteryAvailable && typeof Battery.addBatteryLevelListener === "function") {
+      if (isBatteryAvailable && Battery && typeof Battery.addBatteryLevelListener === 'function') {
         this.batteryLevelSub = Battery.addBatteryLevelListener(({ batteryLevel }) => {
           this.latestBatteryLevel = normalizeBatteryLevel(batteryLevel);
           emitNormalizedData();
@@ -211,11 +253,14 @@ export class DeviceContextCollector {
     this.refreshTimer = setInterval(async () => {
       if (!this.isCollecting) return;
       try {
-        const rawNetwork = await Network.getNetworkStateAsync();
-        const updatedNetwork = normalizeNetworkState(rawNetwork);
-        if (updatedNetwork !== this.latestNetworkState) {
-          this.latestNetworkState = updatedNetwork;
-          emitNormalizedData();
+        const Network = getNetworkModule();
+        if (Network && typeof Network.getNetworkStateAsync === 'function') {
+          const rawNetwork = await Network.getNetworkStateAsync();
+          const updatedNetwork = normalizeNetworkState(rawNetwork);
+          if (updatedNetwork !== this.latestNetworkState) {
+            this.latestNetworkState = updatedNetwork;
+            emitNormalizedData();
+          }
         }
       } catch {
         // Network state fetch error
