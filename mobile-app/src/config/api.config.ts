@@ -13,6 +13,11 @@ const getBaseUrl = (): string => {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
+  // Fallback for Android Emulator (10.0.2.2 routes to host localhost:5000)
+  if (Platform.OS === "android") {
+    return "http://10.0.2.2:5000/api";
+  }
+
   // Handle Expo Go / Metro bundler host IP detection if running on physical device
   const hostUri = Constants.expoConfig?.hostUri;
   if (hostUri) {
@@ -20,11 +25,6 @@ const getBaseUrl = (): string => {
     if (ip && ip !== "localhost" && ip !== "127.0.0.1") {
       return `http://${ip}:5000/api`;
     }
-  }
-
-  // Fallback for emulators & simulators
-  if (Platform.OS === "android") {
-    return "http://10.0.2.2:5000/api";
   }
 
   return "http://localhost:5000/api";
